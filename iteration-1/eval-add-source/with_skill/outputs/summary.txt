@@ -43,6 +43,5 @@
 
 ### 注意事项
 
-- 原始文件 `/Users/horizon/.catpaw/skills/ai-daily-brief/references/sources.md` **未被修改**
-- 本次输出的 `updated_sources.md` 为预览版本，展示添加后的完整内容
-- 若要正式生效，需将该内容覆盖写入原始 `sources.md` 文件
+- The original `references/sources.md` **was not modified** — this is a preview output only
+- To apply the change, the skill would overwrite `references/sources.md` with the updated content

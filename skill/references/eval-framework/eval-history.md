@@ -1,18 +1,18 @@
-# AI 每日简报 · 评分历史记录
+# AI Daily Brief — Eval History
 
-> 此文件由 Step 6.5 自动维护，请勿手动修改数据行。  
-> 最后更新：由 ai-daily-brief Skill 自动维护
-
----
-
-## 每日评分记录
-
-| 日期 | 归一化总分(/100) | L2原始(/50) | L3原始(/60) | L1违规 | 日报链接 | 评估报告链接 |
-|------|----------------|------------|------------|--------|---------|------------|
+> This file is auto-maintained by Step 6.5 on every brief run. Do not manually edit data rows.
+> Last updated: maintained automatically by ai-daily-brief skill
 
 ---
 
-## 每周均分记录
+## Daily Scores
 
-| 周起始 | 周结束 | 周均分(/100) | L2均分(/50) | L3均分(/60) | L1违规次数 | 周报链接 |
-|--------|--------|------------|------------|------------|-----------|---------|
+| Date | Score (/100) | L2 Raw (/50) | L3 Raw (/60) | L1 Violations | Eval Report |
+|------|-------------|-------------|-------------|--------------|-------------|
+
+---
+
+## Weekly Averages
+
+| Week Start | Week End | Avg Score | L2 Avg | L3 Avg | L1 Violations | Weekly Report |
+|-----------|---------|-----------|--------|--------|--------------|---------------|

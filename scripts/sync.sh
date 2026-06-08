@@ -1,37 +1,48 @@
 #!/bin/bash
 # ============================================================
-# sync.sh — 将最新文件同步到 GitHub 仓库
-# 用法：cd /tmp/ai-daily-brief-repo && bash scripts/sync.sh "你的提交说明"
+# sync.sh — Sync local skill changes to your GitHub repo clone
+#
+# Usage:
+#   1. Clone your fork: git clone https://github.com/YOUR_USER/ai-daily-brief.git /path/to/repo
+#   2. Set SKILL_SRC to where your skill is installed:
+#      - CatPaw (macOS):  ~/.catpaw/skills/ai-daily-brief
+#      - Custom path:     wherever you keep SKILL.md + references/
+#   3. Run: bash scripts/sync.sh "your commit message"
 # ============================================================
 
 set -e
 
-REPO_DIR="/tmp/ai-daily-brief-repo"
-SKILL_SRC="/Users/horizon/.catpaw/skills/ai-daily-brief"
-WORKSPACE_SRC="/Users/horizon/Desktop/try/ai-daily-brief-workspace"
-MSG="${1:-sync: 同步最新内容 $(date '+%Y-%m-%d %H:%M')}"
+# ── Configure these two paths ────────────────────────────────
+# Path to this cloned GitHub repo (defaults to the directory containing this script)
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "📦 同步 skill/ 目录..."
+# Path to your locally installed skill
+# Default: CatPaw on macOS. Change if you use a different setup.
+SKILL_SRC="${SKILL_SRC:-$HOME/.catpaw/skills/ai-daily-brief}"
+# ─────────────────────────────────────────────────────────────
+
+MSG="${1:-sync: update skill $(date '+%Y-%m-%d %H:%M')}"
+
+if [ ! -d "$SKILL_SRC" ]; then
+  echo "❌ Skill directory not found: $SKILL_SRC"
+  echo "   Set SKILL_SRC env variable to your skill installation path, e.g.:"
+  echo "   SKILL_SRC=/path/to/skill bash scripts/sync.sh"
+  exit 1
+fi
+
+echo "📦 Syncing skill/ from: $SKILL_SRC"
 rsync -av --delete \
   --exclude='.DS_Store' \
   --exclude='.git' \
-  --exclude='scripts/' \
   "$SKILL_SRC/" "$REPO_DIR/skill/"
 
-echo "📦 同步 workspace/ 目录..."
-rsync -av --delete \
-  --exclude='.DS_Store' \
-  --exclude='.git' \
-  "$WORKSPACE_SRC/" "$REPO_DIR/workspace/"
-
-echo "📝 提交变更..."
+echo "📝 Committing changes..."
 cd "$REPO_DIR"
-git add .
+git add skill/
 if git diff --cached --quiet; then
-  echo "✅ 没有新的变更，无需提交。"
+  echo "✅ No changes to commit."
 else
   git commit -m "$MSG"
   git push origin main
-  echo "✅ 已成功同步到 GitHub！"
-  echo "🔗 https://github.com/2038279302-code/ai-daily-brief"
+  echo "✅ Synced to GitHub successfully!"
 fi
