@@ -1,0 +1,23 @@
+{
+  "skill_name": "ai-daily-brief",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我是做 AI 产品的 PM，帮我生成今天的 AI 日报，推送到我的学城文档（https://km.sankuai.com/collabpage/123456789）下面",
+      "expected_output": "抓取多个信息源内容，生成包含今日概览、最值得关注、产品与技术动态、行业与资本动态、论文与研究、今日观点、PM 今日速记等版块的日报，并创建为指定学城文档的子文档，返回文档链接",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我看看今天 AI 领域有什么大事，不用推学城了，直接给我看内容就行",
+      "expected_output": "抓取信息源，生成日报内容直接在对话中展示，不触发学城推送流程",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "我想在我的 AI 日报信息源里加一个「豆包」的官方博客，地址是 https://team.doubao.com/blog，优先级高",
+      "expected_output": "读取 sources.md，在「一手官方信息源」分类下添加豆包官方博客条目，确认写入成功",
+      "files": []
+    }
+  ]
+}
