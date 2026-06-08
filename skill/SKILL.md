@@ -1,52 +1,53 @@
 ---
 name: ai-daily-brief
-description: AI 领域每日信息简报生成 Skill，专为产品经理设计。从 arXiv 论文、OpenAI/Anthropic/Google 官方博客、36氪/机器之心/量子位等中文媒体、以及 follow-builders（Zara Zhang 维护）提供的 26 位顶级 AI Builder 一手 X 动态 + 6 档 Podcast 内容等多个优质信息源自动抓取当日最新内容，经 AI 整理提炼后，以「重要性排序 + 叙事式」风格生成日报，并附带 AI 产品经理视角的解读分析，最终推送到学城（km.sankuai.com）文档。当用户提到「AI 日报」「AI 动态」「每日简报」「AI 领域最新」「帮我看看今天 AI 有什么新动态」「生成 AI 早报/晚报」「抓取 AI 资讯」「更新信息源」「添加信息源」「推送到学城」时激活。
+description: AI daily brief generator for product managers. Automatically fetches the latest AI news from arXiv, OpenAI/Anthropic/Google official blogs, Chinese tech media (36Kr, Jiqizhixin, Qbitai), top AI builder X posts via follow-builders feed, and 6 podcasts. Generates a narrative-style daily brief with PM-perspective analysis and pushes to your configured destination. Triggers on phrases like "generate AI brief", "today's AI news", "AI daily report", "update my AI sources", "add source", "push brief".
 ---
 
-# AI 每日简报生成器（AI Daily Brief）
+# AI Daily Brief Generator
 
-为 AI 产品经理量身定制的每日信息聚合工具。每次运行，自动从多个优质信息源抓取当日 AI 领域重要动态，经 AI 提炼分析，以「叙事性 + 重要性排序」风格生成日报，并推送到学城文档。
+A daily AI intelligence aggregator tailored for AI Product Managers. Each run automatically fetches the latest AI developments from multiple high-quality sources, distills them with AI analysis, and delivers a narrative-style brief with PM-perspective insights — pushed to wherever you configure.
 
-## 快速使用
+## Quick Start
 
-**日常触发语（任意一种即可）：**
-- "帮我生成今天的 AI 日报"
-- "看看今天 AI 有什么新动态"
-- "生成 AI 早报并推送到学城"
-- "更新我的 AI 信息源"（添加/修改信息源时使用）
+**Trigger phrases (any of these work):**
+- "Generate today's AI brief"
+- "What's happening in AI today"
+- "AI daily report"
+- "Update my AI sources" (when adding/modifying sources)
 
 ---
 
-## 整体工作流
+## Overall Workflow
 
 ```
-Step 1: 读取信息源配置（references/sources.md）
-Step 2: 并行抓取各信息源内容（web_fetch）
-Step 3: AI 提炼、分析、生成日报 XML
-Step 4: 推送到学城文档（citadel skill）
-Step 5: 发送大象消息通知用户（catdesk daxiang）
-Step 6: 返回学城文档链接给用户
+Step 1: Read source config (references/sources.md)
+Step 2: Parallel-fetch all sources (web_fetch)
+Step 3: AI distills, analyzes, generates brief
+Step 4: Deliver output (based on output_mode in sources.md)
+Step 5: Send notification (based on notify_mode in sources.md)
+Step 6.5: Self-evaluation (quality scoring, every run)
+Step 6: Return result to user
 ```
 
 ---
 
-## Step 1：读取信息源配置
+## Step 1: Read Source Config
 
-每次运行前，先读取 `references/sources.md`，获取当前启用的所有信息源列表及其 URL 和抓取策略。
+Before each run, read `references/sources.md` to get the current list of enabled sources, their URLs, fetch strategies, and delivery configuration.
 
-**配置文件路径**：和本 SKILL.md 同目录下的 `references/sources.md`。
+**Config file path**: `references/sources.md` in the same directory as this SKILL.md.
 
 ---
 
-## Step 2：并行抓取内容
+## Step 2: Parallel Fetch
 
-根据 `sources.md` 中的信息源，**并行**调用 `web_fetch` 抓取各信息源页面内容。
+Based on the sources in `sources.md`, **parallel-fetch** all enabled sources using `web_fetch`.
 
-### 抓取策略
+### Fetch Strategy
 
-#### 🥇 优先：follow-builders JSON feed（一手来源，无需 API key）
+#### 🥇 Priority: follow-builders JSON feeds (first-hand, no API key needed)
 
-在抓取其他信息源**之前**，**必须优先**并行抓取以下三个 follow-builders feed：
+**Before fetching other sources**, always parallel-fetch these three feeds first:
 
 ```
 https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json
@@ -54,338 +55,433 @@ https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcast
 https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json
 ```
 
-- `feed-x.json`：包含 26 位顶级 AI builder（Andrej Karpathy、Sam Altman、Swyx、Guillermo Rauch 等）的当日推文，结构为 `x[].tweets[]`，每条 tweet 含 `text`、`url`、`likes`、`createdAt`
-- `feed-podcasts.json`：Latent Space / No Priors / Training Data 等 6 档播客最新期内容
-- `feed-blogs.json`：Anthropic Engineering + Claude Blog 最新文章
+- `feed-x.json`: Daily posts from 26 top AI builders (Andrej Karpathy, Sam Altman, Swyx, Guillermo Rauch, etc.), structure: `x[].tweets[]`, each tweet has `text`, `url`, `likes`, `createdAt`
+- `feed-podcasts.json`: Latest episodes from Latent Space / No Priors / Training Data and 3 other podcasts
+- `feed-blogs.json`: Latest posts from Anthropic Engineering + Claude Blog
 
-**处理 feed-x.json 的规则：**
-1. 遍历所有 builder，收集 `tweets` 列表
-2. 按 `likes + retweets` 降序排列，筛选互动量 ≥ 5 的推文（避免噪音）
-3. 每位 builder 最多保留 2 条最高互动推文进入候选池
-4. `tweet.url` 即为该条内容的 `source_url`，**直接使用，不得替换**
-5. 若 `generatedAt` 距当前时间超过 36 小时，则视为未更新，跳过该 feed
+**Rules for processing feed-x.json:**
+1. Iterate all builders, collect `tweets` lists
+2. Sort by `likes + retweets` descending, filter tweets with interaction ≥ 5 (noise reduction)
+3. Keep at most 2 highest-interaction tweets per builder in the candidate pool
+4. `tweet.url` is the `source_url` for that item — **use directly, never replace**
+5. If `generatedAt` is more than 36 hours ago, treat as stale and skip
 
-#### 其余信息源抓取规则
+#### Other source fetch rules
 
-- 每个信息源最多抓取 1-2 个 URL（避免超时）
-- 优先抓取「列表页/首页」，从中提取当日或近 24 小时的新内容
-- 对于 RSS/订阅类，直接抓取 feed URL
-- **X（Twitter）内容不再使用 Nitter 镜像**；已由 follow-builders feed 覆盖
+- Fetch at most 1–2 URLs per source (avoid timeouts)
+- Prefer list/homepage to extract today's or past-24h content
+- For RSS/feed sources, fetch the feed URL directly
+- **X (Twitter) content is no longer fetched via Nitter mirrors**; covered by follow-builders feed
 
-### 来源 URL 保留规则（必须执行）
+### Source URL Preservation Rules (mandatory)
 
-抓取到每条内容后，**必须提取并记录其原始文章 URL**，作为该条新闻的 `source_url` 字段保留，贯穿 Step 3 生成过程始终：
+After fetching each item, **extract and record its original article URL** as the `source_url` field — carried through to Step 3:
 
-- 从列表页抓取到的每条内容，定位其对应的「详情页链接」，记为 `source_url`
-- 若某条内容**无法确定具体文章 URL**（只有网站首页，无法下钻到具体文章），**则该条内容不得进入日报**
-- 对于官方博客类信息源（OpenAI、Anthropic 等），必须抓取列表页后再解析出具体文章链接
-- `source_url` 必须是指向具体文章/新闻的完整 URL，不得使用信息源首页 URL 代替
+- For each item from a list page, find its detail-page link as `source_url`
+- If an item has **no specific article URL** (only the homepage), **do not include it in the brief**
+- For official blogs (OpenAI, Anthropic, etc.), always parse specific article links from the list page
+- `source_url` must be a full URL pointing to a specific article, never use a homepage URL
 
-### 内容筛选原则
+### Content Filtering
 
-抓取完成后，从所有内容中筛选出**与 AI 相关**的条目，重点关注：
-1. **模型发布 / 重大能力更新**（最高优先级）
-2. **产品发布 / 功能迭代**（高优先级）
-3. **行业重要动态 / 融资并购**（中优先级）
-4. **有影响力的研究论文**（中优先级，侧重应用价值）
-5. **行业观点 / 思考类内容**（低优先级，作为补充）
+After fetching, filter for **AI-relevant** items, prioritized as:
+1. **Model releases / major capability updates** (highest priority)
+2. **Product launches / feature updates** (high priority)
+3. **Industry news / funding / M&A** (medium priority)
+4. **Impactful research papers** (medium priority, focus on practical value)
+5. **Opinions / think-pieces** (low priority, supplementary)
 
-### 幻觉内容过滤规则（必须执行）
+### Hallucination Prevention Rules (mandatory)
 
-在将内容交给 Step 3 之前，对每条候选内容执行以下检查：
+Before passing content to Step 3, check every candidate item:
 
-- **必须有 `source_url` 支撑**：没有具体文章来源 URL 的内容，一律丢弃，不得进入日报
-- **不得凭记忆补写**：AI 不得根据训练数据中已有的知识"补充"任何新闻，所有写入日报的内容必须来自本次实际抓取结果
-- **模型命名核实**：若抓取内容中出现 AI 模型名称（如 GPT-Rosalind、GPT-5X 等），无法在当次抓取的官方来源中找到对应文章，则**禁止写入日报**
-- **数字/数据核实**：融资金额、估值、技术指标等具体数字，必须来自抓取的原文，不得推断或估算
-
----
-
-## Step 3：生成日报内容
-
-### 日报写作原则
-
-**风格**：叙事性 + 重要性排序。不是简单的列表罗列，而是像一位懂 AI 的产品经理朋友，用流畅的语言把今天最值得关注的事情娓娓道来。
+- **Must have `source_url`**: Any item without a specific article URL is discarded
+- **No memory-filling**: AI must not supplement any news from training data — all content in the brief must come from this run's actual fetches
+- **Model name verification**: If a fetched item mentions an AI model name (e.g. GPT-Rosalind), and no corresponding official-source article is found in this run's results, **do not include it**
+- **Number verification**: Funding amounts, valuations, technical benchmarks — all must come from fetched source text, no inference or estimation
 
 ---
 
-### 结构模板（ALWAYS 使用此结构，不得省略任何格式规范）
+## Step 3: Generate Brief Content
+
+### Writing Principles
+
+**Style**: Narrative + importance-ranked. Not a simple list, but like a knowledgeable PM friend fluently walking you through the most important things happening in AI today.
+
+---
+
+### Structure Template (ALWAYS use this structure — no section may be omitted)
 
 ```
-# 【AI 日报】{今日日期} · {用一句话概括今天最重要的事}
+# [AI Brief] {today's date} · {one-sentence summary of the most important thing today}
 
-## 今日概览
-（2-3 句话的总体描述，点出今天 AI 领域的整体氛围和最核心的 1-2 件事。
- 必须包含：① 今日最重磅一件事 ② 今日整体节奏/氛围的判断）
+## Today's Overview
+(2–3 sentences describing the overall AI landscape today and 1–2 core events.
+ Must include: ① the single most important event today ② the overall tone/direction of the day)
 
-## 🔥 最值得关注
-（1-3 条，只放真正重磅的消息）
+## 🔥 Top Story
+(1–3 items, only truly major news)
 
-### {标题}
-`{原始发布日期，如：2026-06-04}` · 来源：[{媒体/机构名}]({source_url})
+### {Title}
+`{original publish date, e.g. 2026-06-04}` · Source: [{media/org name}]({source_url})
 
-**发生了什么：** {事件的客观描述，严格基于抓取原文，不添加训练数据中的知识}
+**What happened:** {objective description, strictly based on fetched source, no added knowledge}
 
-**PM 视角：** {深度分析，见下方「PM 视角写作规范」}
-
----
-
-## 📦 产品与技术动态
-（3-6 条，每条格式统一如下）
-
-### {标题}
-`{原始发布日期}` · 来源：[{媒体/机构名}]({source_url})
-
-{事件简述，2-4 句话，客观陈述，不超出原文范围}
-
-> **对 PM 的启示：** {具体、可操作的一段分析，见下方写作规范}
+**PM Perspective:** {in-depth analysis, see "PM Perspective Writing Rules" below}
 
 ---
 
-## 📰 行业与资本动态
-（2-4 条，每条格式同上，融资/并购/监管/市场格局等）
+## 📦 Products & Tech
+(3–6 items, consistent format per item)
 
-### {标题}
-`{原始发布日期}` · 来源：[{媒体/机构名}]({source_url})
+### {Title}
+`{original publish date}` · Source: [{media/org name}]({source_url})
 
-{事件简述}
+{event summary, 2–4 sentences, objective, within bounds of source text}
 
----
-
-## 📚 论文与研究
-（1-3 篇，重点筛选有实际应用价值的研究）
-
-### {论文标题}
-`{原始发布日期}` · 来源：[{arXiv/机构}]({source_url})
-
-**研究做了什么：** {一句话}
-**为什么值得关注：** {实际应用价值}
+> **PM Takeaway:** {specific, actionable analysis, see writing rules}
 
 ---
 
-## 💡 今日观点
-（1-2 条来自头部 AI Builder 的有价值观点或讨论）
+## 📰 Industry & Capital
+(2–4 items, same format, funding/M&A/regulation/market dynamics)
 
-### {观点概括}
-`{原始发布日期}` · 来源：[{人物/媒体}]({source_url})
+### {Title}
+`{original publish date}` · Source: [{media/org name}]({source_url})
 
-{观点内容}
-
-> **点评：** {简短但有见地的点评，1-3 句话}
+{event summary}
 
 ---
 
-## 🧭 今日 AI 产品决策速记
-（3-5 条，格式：「📌 **结论** — 建议动作」，必须是基于今日新闻推导出的新信息，不得重复正文已有内容）
+## 📚 Papers & Research
+(1–3 papers, filter for practical application value)
 
-- 📌 **{今日新发现的结论}** — {具体建议做什么/关注什么/决策什么}
-- 📌 **{今日新发现的结论}** — {具体建议}
+### {paper title}
+`{original publish date}` · Source: [{arXiv/institution}]({source_url})
+
+**What the research does:** {one sentence}
+**Why it matters:** {practical application value}
+
+---
+
+## 💡 Today's Perspectives
+(1–2 high-value opinions from top AI builders)
+
+### {opinion summary}
+`{original publish date}` · Source: [{person/media}]({source_url})
+
+{opinion content}
+
+> **Commentary:** {brief but insightful, 1–3 sentences}
+
+---
+
+## 🧭 PM Quick Decisions
+(3–5 items, format: "📌 **Conclusion** — Recommended action", must be new insights from today's news, not repeats of body content)
+
+- 📌 **{new finding today}** — {specific: what to do / watch / decide}
+- 📌 **{new finding today}** — {specific action}
 ...
 
 ---
-*本日报由 AI 自动生成 | 信息源：{本次实际获取到内容的媒体列表} | 生成时间：{生成时间}*
-*⚠️ 如发现内容异常，请以原文链接为准*
+*Auto-generated AI brief | Sources: {media list for this run} | Generated: {generation time}*
+*⚠️ If content seems off, verify against source links*
 ```
 
 ---
 
-### 层级规范（必须遵守）
+### Heading Hierarchy Rules (mandatory)
 
-- 日报标题：`#`（H1，唯一，仅在文档开头出现一次）
-- 板块标题（今日概览、🔥 最值得关注等）：`##`（H2）
-- 每条新闻标题：`###`（H3）
-- **禁止**在正文任何位置再使用 `#` 或 `##` 级标题
-- **禁止**在文档开头重复出现两次相同标题（文档标题和正文 H1 二选一，统一用文档标题）
+- Brief title: `#` (H1, unique, appears only once at top)
+- Section headings (Today's Overview, 🔥 Top Story, etc.): `##` (H2)
+- Each news item title: `###` (H3)
+- **Forbidden**: using `#` or `##` anywhere else in the body
+- **Forbidden**: duplicate identical title at start of doc (pick one: doc title or body H1)
 
-### 各板块内容密度规范
+### Content Density per Section
 
-- 🔥 最值得关注：每条 150-300 字（含 PM 视角），字数偏少会显得分析浅薄
-- 📦 产品与技术：每条 80-150 字，各条字数差异不超过 50%（避免头重脚轻）
-- 📰 行业资本：每条 60-120 字，保持与技术板块基本对等的信息密度
-- 💡 今日观点：每条 80-150 字（含点评）
-- 🧭 速记：每条不超过 50 字，必须包含「结论 + 行动建议」两部分
-
----
-
-### PM 视角写作规范（核心升级）
-
-**最低要求**：PM 视角必须包含以下三层分析中的至少两层，缺少则返工：
-
-1. **第一层 - 直接影响**：这件事对产品/用户/竞争格局的直接影响是什么？（禁止只写"值得关注"这类空话）
-
-2. **第二层 - 推导结论**：基于这件事，可以推导出什么更深的判断？（要有因果链：A 发生 → 会导致 B → 因此 C 值得做/担忧/调整）
-
-3. **第三层 - 行动建议**：作为产品经理，**现在**应该做什么、关注什么、调整什么路线图？（必须具体，不能是"持续关注"这类无效建议）
-
-**禁止出现的空洞表达**（出现则视为写作不合格，必须改写）：
-- "值得关注" / "持续关注" / "需要关注"（必须说清楚关注什么、为什么现在关注）
-- "意义重大" / "影响深远"（必须量化或具体化影响范围）
-- "对 PM 的启示是：...这是 AI 产品的重要范式转移"（说了等于没说，需要具体到哪类产品、哪个环节）
+- 🔥 Top Story: 150–300 words per item (including PM Perspective); too short = shallow analysis
+- 📦 Products & Tech: 80–150 words per item, max 50% variance between items
+- 📰 Industry & Capital: 60–120 words per item
+- 💡 Perspectives: 80–150 words per item (including commentary)
+- 🧭 Quick Decisions: max 50 words per item, must include both "conclusion + action"
 
 ---
 
-### 跨事件关联分析规范
+### PM Perspective Writing Rules (core)
 
-当今日有**2条以上新闻属于同一主题/趋势**时，必须在「今日概览」或相关板块开头，用 1-2 句话点出这个共同主题，例如：
+**Minimum requirement**: PM Perspective must include at least 2 of the following 3 layers, otherwise rewrite:
 
-> 「今日有三件事同时指向一个信号：AI 独角兽的资本化进程正在全面加速——Anthropic 递交 IPO、DeepSeek 融资落地、宇树科技极速过会，三条线在今天汇聚。」
+1. **Layer 1 – Direct Impact**: What is the direct effect on products/users/competitive landscape? (Forbidden: vague phrases like "worth watching")
 
-**典型需要关联的主题模式**：
-- 多家公司同日宣布同类产品（如多家推出 Agent/Skill 商店）→ 点出平台入口争夺格局
-- 资本事件 + 技术事件同天出现 → 点出资本和技术双轮驱动的节奏
-- 国内 + 国外同类事件 → 点出差距或对标关系
+2. **Layer 2 – Derived Conclusion**: What deeper judgment can be derived from this? (Requires causal chain: A happens → leads to B → therefore C is worth doing/worrying about/adjusting)
+
+3. **Layer 3 – Action Recommendation**: As a PM, what should you **now** do, watch, or adjust in your roadmap? (Must be specific, not generic advice like "keep monitoring")
+
+**Forbidden phrases** (if present, the writing is substandard — must rewrite):
+- "worth watching" / "keep an eye on" / "worth monitoring" (must specify what and why now)
+- "significant" / "far-reaching impact" (must quantify or specify the scope)
+- "the PM takeaway is: ...this is an important paradigm shift in AI" (specify which product type, which stage)
 
 ---
 
-## Step 4：推送到学城
+### Cross-Event Correlation Rules
 
-使用 **citadel skill** 将日报内容创建为学城文档。
+When **2+ news items belong to the same theme/trend** today, add 1–2 sentences in "Today's Overview" or at the top of the relevant section to highlight the shared theme, e.g.:
 
-### 学城推送规则
+> "Three things today point to the same signal: AI unicorn capitalization is accelerating on all fronts — Anthropic filing for IPO, DeepSeek funding closed, and Unitree going public at speed. Three threads converging today."
 
-1. **读取 `references/sources.md` 中的 `km_parent_id`** 字段，获取目标父文档 ID
-2. 将日报内容写入临时文件 `/tmp/ai-daily-brief-{日期}.xml`
-3. 执行 `createDocument` 推送到学城
+**Common patterns to correlate**:
+- Multiple companies announcing the same type of product on the same day → note the platform/entry-point competition
+- Capital event + tech event on the same day → note the dual flywheel of capital and tech
+- Domestic + international similar events → note the gap or benchmark relationship
 
-### 文档 XML 格式
+---
 
-```xml
-<km-doc>
-  <km-title>【AI 日报】{YYYY-MM-DD}</km-title>
-  <km-markdown><![CDATA[
-  {日报正文 Markdown 内容}
-  ]]></km-markdown>
-</km-doc>
+## Step 4: Deliver Output
+
+Read `output_mode` from `references/sources.md` and route accordingly.
+
+### Routing Logic
+
+```
+output_mode = "file"      → Write Markdown to local file (output_path)
+output_mode = "clipboard" → Prepare content; prompt user to paste anywhere
+output_mode = "webhook"   → HTTP POST to webhook_url with configured headers
+output_mode = "notion"    → Push to Notion page via Notion API
+output_mode = "obsidian"  → Write Markdown file to obsidian_vault_path
+output_mode = "km"        → Push to Meituan KM via citadel skill (internal only)
 ```
 
-### 推送配置
+### file mode
 
-目标父文档 ID 在 `references/sources.md` 的 `## 推送配置` 部分维护。首次运行时若无配置，**询问用户提供父文档链接**，获取后更新 `sources.md`。
+Write the brief as a `.md` file to `output_path`:
+
+```
+File path: {output_path}/ai-brief-{YYYY-MM-DD}.md
+```
+
+If `output_path` does not exist, create it. Return the file path to the user.
+
+### clipboard mode
+
+Prepare the full Markdown content and display it in the conversation with this prompt:
+
+> ✅ Brief ready! Copy the content above and paste it into any platform (Notion, Obsidian, Bear, Typora, etc.).
+
+### webhook mode
+
+Send via HTTP POST:
+
+```bash
+curl -s -X POST "{webhook_url}" \
+  -H "Content-Type: application/json" \
+  {webhook_headers as -H flags} \
+  -d '{"date": "{YYYY-MM-DD}", "title": "{brief title}", "markdown": "{brief markdown (JSON-escaped)}"}'
+```
+
+Common webhook targets:
+- **Slack**: Incoming Webhooks URL → payload field `text` or `blocks`
+- **Feishu (飞书)**: Bot webhook → field `content`
+- **DingTalk (钉钉)**: Robot webhook → field `text`
+- **Custom backend**: Any REST API endpoint
+
+If webhook returns non-2xx, note in Step 6 output: "Webhook delivery failed: {status code}". Do not abort.
+
+### notion mode
+
+Push to Notion using the official API:
+
+```bash
+curl -s -X POST "https://api.notion.com/v1/pages" \
+  -H "Authorization: Bearer {notion_token}" \
+  -H "Notion-Version: 2022-06-28" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent": {"page_id": "{notion_page_id}"},
+    "properties": {"title": {"title": [{"text": {"content": "AI Brief {YYYY-MM-DD}"}}]}},
+    "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"text": {"content": "{brief markdown}"}}]}}]
+  }'
+```
+
+If `notion_token` or `notion_page_id` is empty, prompt the user:
+> "Notion mode requires `notion_token` and `notion_page_id` in `references/sources.md`. Get your token at: https://www.notion.so/my-integrations"
+
+### obsidian mode
+
+Write the Markdown file directly to the Obsidian vault path:
+
+```
+File path: {obsidian_vault_path}/AI Brief {YYYY-MM-DD}.md
+```
+
+### km mode (Meituan internal only)
+
+Use the **citadel skill** to create a KM document.
+
+> ⚠️ This mode requires CatPaw + Meituan internal network. If not available, automatically falls back to `file` mode.
+
+1. Read `km_parent_id` from `references/sources.md`
+2. Write brief to `/tmp/ai-daily-brief-{date}.xml`
+3. Call `createDocument` to push to KM
 
 ---
 
-## Step 4.5：同步到个人 Journal（可选）
+## Step 4.5: Sync to Personal Journal (optional)
 
-学城推送成功后，检查 `references/sources.md` 中的 `journal_sync_url` 字段。
+After Step 4 succeeds, check `journal_sync_url` in `references/sources.md`.
 
-### 同步规则
+### Sync Rules
 
-1. 若 `journal_sync_url` 为空，**跳过此步骤**
-2. 若有值，使用以下命令将日报 Markdown 内容 POST 到 Journal 同步接口：
+1. If `journal_sync_url` is empty, **skip this step**
+2. If set, POST the brief Markdown to the Journal sync endpoint:
 
 ```bash
 curl -s -X POST "{journal_sync_url}" \
   -H "Content-Type: application/json" \
   -H "Cookie: {journal_auth_cookie}" \
-  -d "{\"date\": \"{YYYY-MM-DD}\", \"markdown\": \"{日报Markdown内容（需JSON转义）}\"}"
+  -d '{"date": "{YYYY-MM-DD}", "markdown": "{brief markdown (JSON-escaped)}"}'
 ```
 
-### 注意事项
+If the request returns 401, prompt the user:
+> "Journal sync failed (auth error). Please fill in `journal_auth_cookie` in `sources.md`. How to get it: Open Journal app → F12 → Application → Cookies → copy the `sb-*-auth-token` value."
 
-- `journal_auth_cookie` 为空时，仍尝试请求（用户可能配置了其他鉴权方式）
-- 若请求返回 401，提示用户：「Journal 同步失败（鉴权失败），请在 `sources.md` 中填写 `journal_auth_cookie`，获取方式：打开 Journal 应用 → F12 → Application → Cookies → 复制 `sb-*-auth-token` 的值」
-- 若请求返回其他错误或超时，**不影响整体流程**，仅在最终返回结果中注明「Journal 同步失败：{错误信息}」
-- 若请求成功（返回 `message` 包含「成功」），在最终结果中注明「✅ 已同步到个人 Journal」
-
-### 替代方式（无法自动同步时）
-
-如果 `journal_sync_url` 未配置，或自动同步失败，在最终返回结果末尾提示用户：
-
-> 💡 **手动导入日报**：打开 Journal 应用 → AI 日报页面 → 点击「📋 粘贴日报内容导入」→ 将上方日报 Markdown 内容粘贴进去即可存档。
+If other error or timeout, do not abort — note "Journal sync failed: {error}" in Step 6 output.
 
 ---
 
-## Step 5：发送大象消息通知
+## Step 5: Send Notification
 
-学城文档推送成功后，立即通过大象给用户本人发送一条通知消息。
+Read `notify_mode` from `references/sources.md` and route accordingly.
 
-### 发送规则
+### Routing Logic
 
-1. **读取 `references/sources.md` 中的 `daxiang_mis`** 字段，获取接收通知的 MIS 号
-2. 若 `daxiang_mis` 为空，**跳过此步骤**，不影响整体流程
-3. 使用以下命令发送（将占位符替换为实际值）：
+```
+notify_mode = "terminal"  → Display summary in conversation (default, works everywhere)
+notify_mode = "daxiang"   → Send via catdesk daxiang (CatPaw + Meituan internal only)
+notify_mode = "slack"     → POST to notify_target Slack webhook
+notify_mode = "feishu"    → POST to notify_target Feishu bot webhook
+notify_mode = "dingtalk"  → POST to notify_target DingTalk robot webhook
+notify_mode = "none"      → Skip notification entirely
+```
+
+### terminal mode (default)
+
+Display the following in the conversation:
+
+```
+✅ AI Brief delivered!
+
+{brief title}
+
+📊 {item count} items fetched, {selected count} in brief
+🕐 Coverage: {time range}
+📤 Output: {output destination description}
+```
+
+After Step 6.5 completes, append:
+```
+📊 Quality score: {score summary string}
+📋 Full eval report: {eval report location}
+```
+
+### daxiang mode (Meituan internal only)
 
 ```bash
-catdesk daxiang send --user "{daxiang_mis}" --message "📰 今日 AI 日报已生成！\n\n{今日日报标题}\n\n🔗 {学城文档链接}\n\n今日速记：\n{3条速记内容，每条一行，前缀 📌}"
+catdesk daxiang send --user "{daxiang_mis}" --message "..."
 ```
 
-### 消息格式示例
+> ⚠️ Requires CatPaw environment. Falls back to `terminal` mode on failure.
 
+Message format:
 ```
-📰 今日 AI 日报已生成！
+📰 AI Brief ready!
 
-【AI 日报】2026-06-04 · Anthropic 递交招股书，AI 行业迈入 IPO 元年
+{brief title}
 
-🔗 https://km.sankuai.com/collabpage/2766504519
+🔗 {output link/path}
 
-今日速记：
-📌 Anthropic 递交 S-1，API 依赖方需提前做好供应商多元化准备
-📌 Skill 商店是今年最值得深度研究的产品战场，腾讯/阿里/字节/Meta 都已入场
-📌 Token 经济学正在被质疑，AI 产品 ROI 叙事需从"能力展示"转向"效率可量化"
+Quick Decisions:
+📌 {item 1}
+📌 {item 2}
+📌 {item 3}
+
+📊 Quality score: {score summary string}
+📋 Full eval report: {eval report location}
 ```
 
-### 注意事项
+### slack mode
 
-- 消息中的换行使用 `\n`
-- 学城链接会自动被大象识别为可点击超链接
-- 若发送失败（如网络问题），**不影响整体流程**，仅在最终返回结果中注明「大象通知发送失败」
-- **Step 6.5 完成后**，在消息末尾追加评分摘要行（格式示例：`85/100（时效 9 · 深度 13/15 · 结构 ✅）`）：
-  ```
-  📊 本次质量评分：{评分摘要字符串}
-  📋 详细评估报告：{学城评估报告链接}
-  ```
+```bash
+curl -s -X POST "{notify_target}" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "📰 AI Brief ready!\n\n{brief title}\n\n🔗 {output link}\n\nQuick Decisions:\n📌 {item 1}\n📌 {item 2}\n📌 {item 3}"}'
+```
 
----
+### feishu mode
 
-## Step 6.5：质量自评（每次必须执行）
+```bash
+curl -s -X POST "{notify_target}" \
+  -H "Content-Type: application/json" \
+  -d '{"msg_type": "text", "content": {"text": "📰 AI Brief ready!\n{brief title}\n🔗 {output link}"}}'
+```
 
-日报生成并推送到学城后，立即执行质量自评流程。
+### dingtalk mode
 
-详细执行规范参见：`references/eval-framework/EVAL-WORKFLOW.md`
+```bash
+curl -s -X POST "{notify_target}" \
+  -H "Content-Type: application/json" \
+  -d '{"msgtype": "text", "text": {"content": "📰 AI Brief ready!\n{brief title}\n🔗 {output link}"}}'
+```
 
-简要步骤：
-1. 对日报正文运行 Layer 1 硬规则检测（5 项 Pass/Fail）
-2. 计算 Layer 2 量化得分（5 项，满分 50 分）
-3. 进行 Layer 3 定性评估（L3-1/L3-3 满分 15 分，其余满分 10 分，原始总分 60 分）
-4. 归一化总分 = round((L2总分 + L3总分) ÷ 110 × 100)
-5. 将完整评估报告创建为学城文档（与日报同父目录）
-6. 将本次评分追加到 references/eval-framework/eval-history.md
-
----
-
-## Step 6：返回结果
-
-推送成功后，向用户返回：
-- ✅ 日报已生成并推送到学城
-- 📎 学城文档链接
-- 📊 本次共抓取了 X 条资讯，筛选出 Y 条进入日报
-- 🕐 覆盖时间范围
-- 📊 本次质量评分：{评分摘要字符串}（详细报告：{学城链接}）
+If notification fails for any mode, **do not abort** — note "Notification failed: {error}" in Step 6 output.
 
 ---
 
-## 管理信息源
+## Step 6.5: Quality Self-Evaluation (every run, mandatory)
 
-当用户说「添加信息源」「更新信息源」「添加 XX 到我的信息源」时：
+After the brief is delivered in Step 4, immediately run the self-evaluation flow.
 
-1. 读取 `references/sources.md`
-2. 在对应分类下添加新条目
-3. 确认写入并告知用户
+Full execution spec: `references/eval-framework/EVAL-WORKFLOW.md`
 
-**信息源配置格式**参见 `references/sources.md`。
-
----
-
-## 注意事项
-
-- 抓取内容时，部分网站可能有访问限制，遇到失败时跳过该源，不影响整体流程
-- X（Twitter）内容通过 follow-builders feed（`feed-x.json`）获取，覆盖 26 位顶级 AI builder；若 feed 未更新（超 36 小时）则跳过，日报中标注「follow-builders feed 本次未更新」
-- 日报应聚焦「今天」或「过去 24 小时」的内容，避免把旧新闻混入
-- 若当天信息量较少（抓取失败较多），诚实告知用户，不要凑字数
-- 日报语言使用**中文**，专业术语保留英文原名（如 GPT-5、Claude、Gemini 等）
+Summary:
+1. Run Layer 1 hard rule checks (5 Pass/Fail items)
+2. Calculate Layer 2 quantitative score (5 items, max 50 pts)
+3. Run Layer 3 qualitative evaluation (L3-1/L3-3 max 15 pts each; others max 10 pts; raw total 60 pts)
+4. Normalized total = round((L2 total + L3 total) ÷ 110 × 100)
+5. Deliver eval report (based on `eval_output_mode` in sources.md)
+6. Append this run's score to `references/eval-framework/eval-history.md`
 
 ---
 
-## 参考文件
+## Step 6: Return Result
 
-- `references/sources.md` — 信息源配置（URL 列表、抓取策略、推送配置）
+After delivery, return to user:
+- ✅ Brief generated and delivered
+- 📎 Output location (file path / URL / platform link)
+- 📊 {X} items fetched, {Y} items in brief
+- 🕐 Coverage time range
+- 📊 Quality score: {score summary string} (full report: {eval report location})
+
+---
+
+## Managing Sources
+
+When the user says "add source", "update sources", "add X to my sources":
+
+1. Read `references/sources.md`
+2. Add new entry under the appropriate category
+3. Confirm write and inform user
+
+**Source config format**: see `references/sources.md`.
+
+---
+
+## Notes
+
+- If a source fetch fails (timeout, 403, etc.), skip it — note in brief footer
+- X (Twitter) content comes from the follow-builders feed (`feed-x.json`, 26 top AI builders); if feed is stale (>36h), skip and note "follow-builders feed not updated this run"
+- Brief should focus on **today** or **past 24 hours** — do not mix in old news
+- If there's genuinely little news (many fetch failures), be honest with the user — don't pad the brief
+- Brief language: **English** by default; can be switched to Chinese by setting `brief_language: "zh"` in sources.md
+- All technical terms and model names keep their original English form (GPT-5, Claude, Gemini, etc.)

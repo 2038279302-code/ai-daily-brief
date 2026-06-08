@@ -145,25 +145,50 @@ Step 4：L1 违规上限修正
 
 ---
 
-### Step 6.5-E：将评估报告写入学城
+### Step 6.5-E：输出评估报告
 
-**文档位置**：与日报同一父文档（`km_parent_id`）下，作为兄弟文档。
+**报告内容**：使用 `EVAL-REPORT-TEMPLATE.md` 中的模板，填入本次评估结果。
 
-**文档标题格式**：`【AI 日报评估】{YYYY-MM-DD}`
+**输出方式**：读取 `references/sources.md` 中的 `eval_output_mode` 字段，路由如下：
 
-**文档内容**：使用 `EVAL-REPORT-TEMPLATE.md` 中的模板，填入本次评估结果。
-
-**执行命令**：
-```bash
-# 1. 将评估报告写入临时文件
-# 文件路径：/tmp/ai-daily-brief-eval-{日期}.xml
-
-# 2. 调用 citadel createDocument
-# parent_id 与日报相同（km_parent_id）
-# 标题：【AI 日报评估】{YYYY-MM-DD}
+```
+eval_output_mode = "same"     → 跟随 output_mode（默认）
+eval_output_mode = "file"     → 写入本地文件（路径：{output_path}/eval-{YYYY-MM-DD}.md）
+eval_output_mode = "km"       → 写入学城（需 CatPaw + 内网，失败则降级为 file）
+eval_output_mode = "notion"   → 写入 Notion（与日报同父页面）
+eval_output_mode = "obsidian" → 写入 Obsidian vault（路径：{obsidian_vault_path}/eval/eval-{YYYY-MM-DD}.md）
+eval_output_mode = "terminal" → 仅在对话中展示，不持久化
 ```
 
-**注意**：若学城评估报告创建失败，**不影响整体流程**，在 Step 6 返回结果中注明「评估报告推送失败」。
+**各模式处理细节：**
+
+**file / obsidian / same→file 模式：**
+```
+文件路径：{output_path}/eval-{YYYY-MM-DD}.md
+内容：EVAL-REPORT-TEMPLATE.md 模板填充后的 Markdown
+```
+
+**km 模式（美团内网专属）：**
+```bash
+# 1. 将评估报告写入临时文件：/tmp/ai-daily-brief-eval-{日期}.xml
+# 2. 调用 citadel createDocument
+#    parent_id 与日报相同（km_parent_id）
+#    标题格式：【AI 日报评估】{YYYY-MM-DD}
+```
+
+**notion 模式：**
+```bash
+curl -s -X POST "https://api.notion.com/v1/pages" \
+  -H "Authorization: Bearer {notion_token}" \
+  -H "Notion-Version: 2022-06-28" \
+  -H "Content-Type: application/json" \
+  -d '{"parent": {"page_id": "{notion_page_id}"}, "properties": {"title": {"title": [{"text": {"content": "AI Brief Eval {YYYY-MM-DD}"}}]}}, ...}'
+```
+
+**terminal 模式：**
+直接在对话中展示完整评估报告内容，不写文件。
+
+**注意**：无论哪种模式，若输出失败，**不影响整体流程**，在 Step 6 返回结果中注明「评估报告输出失败：{原因}」。
 
 ---
 
@@ -171,36 +196,47 @@ Step 4：L1 违规上限修正
 
 评估完成后，将本次评分追加到 **`references/eval-framework/eval-history.md`** 的每日评分表格中。
 
-**文件路径**：`/Users/horizon/.catpaw/skills/ai-daily-brief/references/eval-framework/eval-history.md`
+**文件路径**：与本 SKILL 文件同目录下的 `references/eval-framework/eval-history.md`（相对路径，不使用硬编码绝对路径）。
 
 **追加格式**：
 ```
-| {YYYY-MM-DD} | {最终总分} | {L2原始总分}/50 | {L3原始总分}/60 | {L1是否有FAIL项} | {学城评估报告URL} |
+| {YYYY-MM-DD} | {最终总分} | {L2原始总分}/50 | {L3原始总分}/60 | {L1是否有FAIL项} | {评估报告位置（文件路径或URL）} |
 ```
 
-**注意**：若 `eval-history.md` 文件不存在，先创建（使用 `EVAL-HISTORY-INIT.md` 中的表头），再追加数据。
+**注意**：若 `eval-history.md` 文件不存在，先创建（使用下方表头），再追加数据：
+```markdown
+# AI 日报评估历史
+
+## 每日评分
+
+| 日期 | 最终得分 | L2得分 | L3得分 | L1违规 | 评估报告 |
+|------|----------|--------|--------|--------|----------|
+```
 
 ---
 
-## 三、大象通知格式变更
+## 三、通知格式变更（Step 5）
 
-Step 6.5 完成后，Step 5（大象通知）的消息格式在原有基础上，末尾追加评分摘要：
+Step 6.5 完成后，Step 5 的通知消息（无论 `notify_mode` 是哪种）在原有基础上，末尾统一追加评分摘要：
 
 ```
-📰 今日 AI 日报已生成！
+📰 AI Brief ready!
 
-【AI 日报】{日期} · {标题}
+{日报标题} · {日期}
 
-🔗 {学城日报链接}
+🔗 {日报输出位置（文件路径或 URL）}
 
-今日速记：
+Quick Decisions:
 📌 {速记1}
 📌 {速记2}
 📌 {速记3}
 
-📊 本次质量评分：{评分摘要字符串}
-📋 详细评估报告：{学城评估报告链接}
+📊 Quality score: {评分摘要字符串}
+📋 Full eval report: {评估报告位置（文件路径或 URL）}
 ```
+
+> **注**：评分摘要字符串格式：`{最终总分}/100（时效 {L2-1} · 深度 {L3-1}/15 · 结构 {L1结果}）`  
+> 示例：`85/100（时效 9 · 深度 13/15 · 结构 ✅）`
 
 ---
 
@@ -226,70 +262,78 @@ Step 6.5 完成后，Step 5（大象通知）的消息格式在原有基础上�
 - 本周最高分日期 & 最低分日期
 - 本周 L1 违规次数
 
-**Step W-3**：将汇总报告写入学城，标题格式：`【AI 日报周报】{本周起始日期}~{本周结束日期}`，父文档与日报相同。
+**Step W-3**：将汇总报告按 `eval_output_mode` 输出，标题/文件名格式：`AI Brief Weekly {本周起始日期}~{本周结束日期}`，输出位置与日报评估报告相同。
 
 **Step W-4**：将本周均分记录追加到 `eval-history.md` 的每周均分表格中：
 ```
-| {周起始日期} | {周结束日期} | {周均分} | {L2均分} | {L3均分} | {L1违规次数} | {学城周报URL} |
+| {周起始日期} | {周结束日期} | {周均分} | {L2均分} | {L3均分} | {L1违规次数} | {周报位置（文件路径或URL）} |
 ```
 
-**Step W-5**：通过大象发送周报通知（使用 `daxiang_mis`），消息格式：
+若 `eval-history.md` 中尚无「每周均分」表格，在文件末尾追加表头：
+```markdown
+## 每周均分
+
+| 周起始 | 周结束 | 周均分 | L2均分 | L3均分 | L1违规次数 | 周报位置 |
+|--------|--------|--------|--------|--------|-----------|----------|
+```
+
+**Step W-5**：按 `notify_mode` 发送周报通知，消息格式：
 
 ```
-📊 本周 AI 日报质量周报
+📊 AI Brief Weekly Report
 
 🗓️ {本周起始日期} ~ {本周结束日期}
-📈 本周平均分：{平均分}/100（上周：{上周平均分}）
+📈 Weekly avg: {平均分}/100 (last week: {上周平均分})
 
-最佳一期：{最高分日期}（{最高分}分）
-需关注：{最低分日期}（{最低分}分）
+Best: {最高分日期} ({最高分})
+Needs attention: {最低分日期} ({最低分})
 
-改进重点：{Top 1 改进建议}
+Top improvement: {Top 1 改进建议}
 
-🔗 {学城周报链接}
+🔗 {周报位置（文件路径或URL）}
 ```
 
 ---
 
 ## 五、对现有 SKILL.md 的修改指引
 
-> **执行 Agent 注意**：需对 `SKILL.md` 进行以下改动，其余内容保持不变。
+> **注**：此章节为内部迭代参考，描述如何将评估流程嵌入到 SKILL.md。**通用版 SKILL.md 已内置 Step 6.5**，无需额外操作。
 
 ### 修改点 1：在 Step 5 和 Step 6 之间插入 Step 6.5 章节
 
 **在 `## Step 6：返回结果` 章节之前插入**：
 
 ```markdown
-## Step 6.5：质量自评（每次必须执行）
+## Step 6.5: Quality Self-Evaluation (mandatory every run)
 
-日报生成并推送到学城后，立即执行质量自评流程。
+After the brief is delivered in Step 4, immediately run the self-evaluation flow.
 
-详细执行规范参见：`references/eval-framework/EVAL-WORKFLOW.md`
+Full execution spec: `references/eval-framework/EVAL-WORKFLOW.md`
 
-简要步骤：
-1. 对日报正文运行 Layer 1 硬规则检测（5 项 Pass/Fail）
-2. 计算 Layer 2 量化得分（5 项，满分 50 分）
-3. 进行 Layer 3 定性评估（L3-1/L3-3 满分 15 分，其余满分 10 分，原始总分 60 分）
-4. 归一化总分 = round((L2总分 + L3总分) ÷ 110 × 100)
-5. 将完整评估报告创建为学城文档（与日报同父目录）
-6. 将本次评分追加到 references/eval-framework/eval-history.md
+Summary:
+1. Run Layer 1 hard rule checks (5 Pass/Fail items)
+2. Calculate Layer 2 quantitative score (5 items, max 50 pts)
+3. Run Layer 3 qualitative evaluation (L3-1/L3-3 max 15 pts each; others max 10 pts; raw total 60 pts)
+4. Normalized total = round((L2 total + L3 total) ÷ 110 × 100)
+5. Deliver eval report (based on eval_output_mode in sources.md)
+6. Append this run's score to references/eval-framework/eval-history.md
 ```
 
-### 修改点 2：Step 5 大象通知格式
+### 修改点 2：Step 5 通知格式
 
 将 Step 5 中的消息格式，在末尾追加：
 ```
-📊 本次质量评分：{评分摘要字符串}
-📋 详细评估报告：{学城评估报告链接}
+📊 Quality score: {评分摘要字符串}
+📋 Full eval report: {评估报告位置（文件路径或URL）}
 ```
 
 ### 修改点 3：Step 6 返回结果内容
 
 在返回给用户的内容中追加：
 ```
-- 📊 本次质量评分：{评分摘要字符串}（详细报告：{学城链接}）
+- 📊 Quality score: {评分摘要字符串} (full report: {评估报告位置})
 ```
 
 ---
 
-*工作流版本：v1.1 | 创建日期：2026-06-08 | 变更：归一化总分计算，eval-history 独立文件*
+*工作流版本：v1.2 | 创建日期：2026-06-08 | v1.1变更：归一化总分计算，eval-history 独立文件 | v1.2变更：通用化改造，Step 6.5-E 输出跟随 eval_output_mode，去除硬编码学城/大象依赖*
